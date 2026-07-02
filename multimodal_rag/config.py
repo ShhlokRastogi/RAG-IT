@@ -2,8 +2,8 @@ import os
 import json
 from pathlib import Path
 
-# Base workspace directory
-WORKSPACE_DIR = Path("c:/D/multimodal rag/rag-it")
+# Base workspace directory (resolved dynamically relative to this file)
+WORKSPACE_DIR = Path(__file__).parent.parent.resolve()
 
 # Data directories
 DATA_DIR = WORKSPACE_DIR / "data"
