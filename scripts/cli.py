@@ -489,31 +489,363 @@ def main():
 
     # --- 7. START COMMAND ---
     elif args.command == "start":
-        print_header("RAG It Interactive RAG Setup Wizard")
-        if args.verbose:
-            VERBOSE_LOGS = True
-            
-        import time
-        decomp = not args.no_decomp
-        open_v = not args.no_open
-        history = []
+        interactive_menu(args.doc)
+
+    # --- 8. CHAT COMMAND ---
+    elif args.command == "chat":
+        run_chat_session(args.doc, not args.no_decomp, not args.no_open, args.verbose)
+
+import time
+
+def run_interactive_config():
+    print_header("Configuring API Key")
+    try:
+        import getpass
+        key = getpass.getpass("Enter OpenAI API Key: ").strip()
+        if not key:
+            print(f"{C_RED}[Error] API Key cannot be empty.{C_RESET}")
+            return
+        save_openai_api_key(key)
+        print(f"{C_GREEN}[Success] API Key saved successfully to settings file.{C_RESET}")
+    except Exception as e:
+        print(f"{C_RED}[Error] Failed to save key: {e}{C_RESET}")
+
+def run_interactive_ingestion():
+    print_header("Document Ingestion Service")
+    path_str = input("Enter path to local file or folder: ").strip()
+    if not path_str:
+        print(f"{C_RED}[Error] Path cannot be empty.{C_RESET}")
+        return
+    input_path = Path(path_str)
+    if not input_path.exists():
+        print(f"{C_RED}[Error] Path does not exist: {path_str}{C_RESET}")
+        return
         
-        # Initialize Embedding/Vector/BM25 pipelines to fetch ingested docs
+    force_str = input("Force re-ingest existing documents? (y/N): ").strip().lower()
+    force = (force_str == 'y')
+    
+    SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".xlsx", ".xls", ".csv", ".txt", ".md"}
+    ingest_files = []
+    if input_path.is_file():
+        if input_path.suffix.lower() in SUPPORTED_EXTENSIONS:
+            ingest_files.append(input_path)
+        else:
+            print(f"{C_RED}[Error] Unsupported file format.{C_RESET}")
+            return
+    elif input_path.is_dir():
+        ingest_files = sorted([p for p in input_path.iterdir() if p.is_file() and p.suffix.lower() in SUPPORTED_EXTENSIONS])
+        if not ingest_files:
+            print(f"{C_YELLOW}[Warning] No supported document files found in directory: {input_path}{C_RESET}")
+            return
+            
+    print(f"{C_CYAN}[System] Initializing pipelines...{C_RESET}")
+    em = EmbeddingPipeline()
+    vs = VectorStoreManager(em.dimension)
+    bm = BM25IndexManager()
+    doc_parser = DocumentProcessor()
+    
+    # Reset token tracker
+    from multimodal_rag.config import TokenTracker
+    TokenTracker.reset()
+    
+    docs = vs.list_documents()
+    ingested_count = 0
+    skipped_count = 0
+    
+    for idx, doc_path in enumerate(ingest_files):
+        print(f"\n{C_CYAN}--- Processing [{idx+1}/{len(ingest_files)}] {doc_path.name} ---{C_RESET}")
+        if doc_path.name in docs and not force:
+            print(f"{C_YELLOW}[Notice] Document '{doc_path.name}' is already ingested. Skipping.{C_RESET}")
+            skipped_count += 1
+            continue
+            
+        if doc_path.name in docs and force:
+            print(f"{C_CYAN}[System] Force flag enabled. Wiping existing index for '{doc_path.name}'...{C_RESET}")
+            vs.delete_document(doc_path.name)
+            bm.delete_document(doc_path.name)
+            
+        print(f"{C_CYAN}[System] Parsing document structures (pages, headers, tables, images)...{C_RESET}")
+        try:
+            chunks = doc_parser.process_file(str(doc_path))
+            if not chunks:
+                print(f"{C_YELLOW}[Warning] No chunks extracted from document.{C_RESET}")
+                continue
+                
+            print(f"{C_CYAN}[System] Chunking complete. Generating embeddings for {len(chunks)} elements...{C_RESET}")
+            contents = [c["content"] for c in chunks]
+            embeddings_list = em.embed_documents(contents)
+            
+            print(f"{C_CYAN}[System] Writing vectors to ChromaDB collection...{C_RESET}")
+            vs.add_chunks(chunks, embeddings_list)
+            
+            print(f"{C_CYAN}[System] Writing terms to BM25 index...{C_RESET}")
+            bm.add_chunks(chunks)
+            
+            print(f"{C_GREEN}[Success] Ingested '{doc_path.name}' successfully!{C_RESET}")
+            ingested_count += 1
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            print(f"{C_RED}[Error] Ingestion failed for '{doc_path.name}': {e}{C_RESET}")
+            
+    print(f"\n{C_GREEN}=== Ingestion Batch Complete ==={C_RESET}")
+    print(f"  - Total Files Found:     {len(ingest_files)}")
+    print(f"  - Successfully Indexed:  {ingested_count}")
+    print(f"  - Skipped (Duplicates):  {skipped_count}")
+    print(f"{C_CYAN}--------------------------------------------------{C_RESET}")
+
+def run_interactive_list():
+    print_header("Index Database Overview")
+    try:
+        em = EmbeddingPipeline()
+        vs = VectorStoreManager(em.dimension)
+        stats = vs.get_stats()
+        docs = vs.list_documents()
+        
+        print(f"Total Chunks: {C_BOLD}{stats.get('total_chunks', 0)}{C_RESET}")
+        print(f"Text Chunks:  {stats.get('text_count', 0)}")
+        print(f"Table Chunks: {stats.get('table_count', 0)}")
+        print(f"Image Chunks: {stats.get('image_count', 0)}")
+        print("-" * 30)
+        print("Ingested Documents:")
+        if docs:
+            for doc in docs:
+                print(f" - {C_GREEN}{doc}{C_RESET}")
+        else:
+            print(" (No documents ingested yet)")
+    except Exception as e:
+        print(f"{C_RED}[Error] Failed to fetch database list: {e}{C_RESET}")
+
+def run_interactive_delete():
+    print_header("Delete Document Index")
+    try:
+        em = EmbeddingPipeline()
+        vs = VectorStoreManager(em.dimension)
+        docs = vs.list_documents()
+        if not docs:
+            print("No documents available to delete.")
+            return
+            
+        print("Select document to delete:")
+        for idx, doc in enumerate(docs):
+            print(f"  [{idx+1}] {doc}")
+            
+        choice = input(f"Enter option (1-{len(docs)}) or type the filename: ").strip()
+        if not choice:
+            return
+            
+        doc_name = None
+        try:
+            choice_idx = int(choice)
+            if 1 <= choice_idx <= len(docs):
+                doc_name = docs[choice_idx - 1]
+        except ValueError:
+            doc_name = choice
+            
+        if doc_name not in docs:
+            print(f"{C_RED}[Error] Document '{doc_name}' is not in database.{C_RESET}")
+            return
+            
+        confirm = input(f"{C_RED}Are you sure you want to wipe all records for '{doc_name}'? (y/N): {C_RESET}").strip().lower()
+        if confirm != 'y':
+            print("Aborted.")
+            return
+            
+        bm = BM25IndexManager()
+        vs.delete_document(doc_name)
+        bm.delete_document(doc_name)
+        print(f"{C_GREEN}[Success] Document '{doc_name}' has been successfully wiped from indexes.{C_RESET}")
+    except Exception as e:
+        print(f"{C_RED}[Error] Delete failed: {e}{C_RESET}")
+
+def run_interactive_reset():
+    print_header("CRITICAL: Resetting Databases")
+    confirm = input(f"{C_RED}Are you absolutely sure you want to delete all vectors and search indexes? (y/N): {C_RESET}").strip().lower()
+    if confirm != 'y':
+        print("Aborted.")
+        return
+        
+    try:
         em = EmbeddingPipeline()
         vs = VectorStoreManager(em.dimension)
         bm = BM25IndexManager()
         
-        ingested_docs = vs.list_documents()
-        selected_doc = args.doc
+        docs = vs.list_documents()
+        for doc in docs:
+            vs.delete_document(doc)
+            bm.delete_document(doc)
+            
+        vs.reset_db()
+        bm.reset_db()
+        print(f"{C_GREEN}[Success] Wiped vector database and keyword search index successfully.{C_RESET}")
+    except Exception as e:
+        print(f"{C_RED}[Error] Reset failed: {e}{C_RESET}")
+
+def run_chat_session(pre_selected_doc=None, default_decomp=True, default_open=True, default_verbose=False):
+    global VERBOSE_LOGS
+    print_header("RAG It Interactive RAG Session")
+    
+    if default_verbose:
+        VERBOSE_LOGS = True
         
-        if not selected_doc:
-            print(f"{C_CYAN}Select a document scope for this chat session:{C_RESET}")
+    decomp = default_decomp
+    open_v = default_open
+    history = []
+    
+    # Initialize pipelines to fetch ingested docs
+    em = EmbeddingPipeline()
+    vs = VectorStoreManager(em.dimension)
+    bm = BM25IndexManager()
+    
+    ingested_docs = vs.list_documents()
+    selected_doc = pre_selected_doc
+    
+    if not selected_doc:
+        print(f"{C_CYAN}Select a document scope for this chat session:{C_RESET}")
+        print(f"  [0] {C_GREEN}Use all ingested documents (global search){C_RESET}")
+        for idx, doc in enumerate(ingested_docs):
+            print(f"  [{idx+1}] {doc}")
+        new_idx = len(ingested_docs) + 1
+        print(f"  [{new_idx}] {C_YELLOW}Ingest a new document (PDF, Excel, Word, TXT, MD)...{C_RESET}")
+
+        while True:
+            try:
+                choice = input(f"\nSelect option (0-{new_idx}): ").strip()
+                if not choice:
+                    choice = "0"
+                choice_val = int(choice)
+                if choice_val == 0:
+                    selected_doc = None
+                    print(f"{C_GREEN}[Scope] Global search enabled.{C_RESET}")
+                    break
+                elif 1 <= choice_val <= len(ingested_docs):
+                    selected_doc = ingested_docs[choice_val - 1]
+                    print(f"{C_GREEN}[Scope] Scoped query filter set to: '{selected_doc}'{C_RESET}")
+                    break
+                elif choice_val == new_idx:
+                    new_path = input(f"{C_YELLOW}Enter path to new file or directory: {C_RESET}").strip()
+                    if not new_path:
+                        print(f"{C_RED}[Error] Path cannot be empty.{C_RESET}")
+                        continue
+                    p_path = Path(new_path)
+                    if not p_path.exists():
+                        print(f"{C_RED}[Error] Path does not exist: {new_path}{C_RESET}")
+                        continue
+
+                    SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".xlsx", ".xls", ".csv", ".txt", ".md"}
+                    ingest_files = []
+                    if p_path.is_file():
+                        if p_path.suffix.lower() in SUPPORTED_EXTENSIONS:
+                            ingest_files.append(p_path)
+                        else:
+                            print(f"{C_RED}[Error] Unsupported file format.{C_RESET}")
+                            continue
+                    elif p_path.is_dir():
+                        ingest_files = sorted([p for p in p_path.iterdir() if p.is_file() and p.suffix.lower() in SUPPORTED_EXTENSIONS])
+
+                    if not ingest_files:
+                        print(f"{C_RED}[Error] No supported document files found in directory: {p_path}{C_RESET}")
+                        continue
+
+                    print(f"{C_CYAN}[System] Ingesting {len(ingest_files)} document(s)...{C_RESET}")
+                    doc_parser = DocumentProcessor()
+
+                    # Reset tokens
+                    from multimodal_rag.config import TokenTracker
+                    TokenTracker.reset()
+
+                    for pf in ingest_files:
+                        if pf.name in ingested_docs:
+                            print(f"{C_YELLOW}[Notice] Document '{pf.name}' is already ingested. Skipping.{C_RESET}")
+                            continue
+                        print(f"{C_CYAN}[System] Processing '{pf.name}'...{C_RESET}")
+                        try:
+                            chunks = doc_parser.process_file(str(pf))
+                            if not chunks:
+                                continue
+                            contents = [c["content"] for c in chunks]
+                            embeddings_list = em.embed_documents(contents)
+                            vs.add_chunks(chunks, embeddings_list)
+                            bm.add_chunks(chunks)
+                            print(f"{C_GREEN}[Success] Indexed '{pf.name}'{C_RESET}")
+                        except Exception as e:
+                            print(f"{C_RED}[Error] Failed to index '{pf.name}': {e}{C_RESET}")
+
+                    selected_doc = ingest_files[0].name if len(ingest_files) == 1 else None
+                    if len(ingest_files) > 1:
+                        print(f"{C_GREEN}[Scope] Global search enabled (using all ingested files).{C_RESET}")
+                    else:
+                        print(f"{C_GREEN}[Scope] Scoped query filter set to: '{selected_doc}'{C_RESET}")
+                    break
+                else:
+                    print(f"{C_RED}Invalid option. Please enter 0 to {new_idx}.{C_RESET}")
+            except ValueError:
+                print(f"{C_RED}Please enter a valid choice.{C_RESET}")
+            except (KeyboardInterrupt, EOFError):
+                print("\nSetup wizard aborted. Exiting.")
+                return
+    else:
+        print(f"{C_GREEN}[Scope] Scoped query filter pre-set to: '{selected_doc}'{C_RESET}")
+        
+    # Session metrics tracking
+    session_queries = 0
+    session_total_latency = 0.0
+    session_pages_cited = set()
+    session_docs_cited = set()
+    session_start_time = time.time()
+    session_prompt_tokens = 0
+    session_completion_tokens = 0
+    
+    # Display controls
+    print(f"\n{C_CYAN}Controls:{C_RESET}")
+    print("  - Type your question and hit Enter.")
+    print("  - Type /exit or /quit to end the chat.")
+    print(f"  - Type /decomp to toggle Query Decomposition. (Currently: {C_BOLD}{'ON' if decomp else 'OFF'}{C_RESET})")
+    print(f"  - Type /open to toggle Auto-Opening Cited Images. (Currently: {C_BOLD}{'ON' if open_v else 'OFF'}{C_RESET})")
+    print(f"  - Type /verbose to toggle detailed system logs. (Currently: {C_BOLD}{'ON' if VERBOSE_LOGS else 'OFF'}{C_RESET})")
+    print("  - Type /stats to view your current session metrics scorecard.")
+    print("  - Type /clear to wipe the active session memory/history.")
+    print("  - Type /key to update your OpenAI API Key dynamically.")
+    print("  - Type /start to switch document scope or ingest new documents.")
+    print("  - Type /help to see this menu.")
+    print("-" * 60)
+
+    while True:
+        try:
+            user_input = input(f"\n{C_BOLD}User > {C_RESET}").strip()
+        except (KeyboardInterrupt, EOFError):
+            print_session_scorecard(session_queries, session_total_latency, session_docs_cited, session_pages_cited, session_start_time, session_prompt_tokens, session_completion_tokens)
+            break
+
+        if not user_input:
+            continue
+
+        # Command checks
+        if user_input.lower() in ["/exit", "/quit"]:
+            print_session_scorecard(session_queries, session_total_latency, session_docs_cited, session_pages_cited, session_start_time, session_prompt_tokens, session_completion_tokens)
+            break
+        elif user_input.lower() == "/decomp":
+            decomp = not decomp
+            print(f"{C_YELLOW}[Toggle] Query Decomposition is now {'ON' if decomp else 'OFF'}{C_RESET}")
+            continue
+        elif user_input.lower() == "/open":
+            open_v = not open_v
+            print(f"{C_YELLOW}[Toggle] Auto-Opening of Visuals is now {'ON' if open_v else 'OFF'}{C_RESET}")
+            continue
+        elif user_input.lower() == "/verbose":
+            VERBOSE_LOGS = not VERBOSE_LOGS
+            print(f"{C_YELLOW}[Toggle] Detailed system logging is now {'ON' if VERBOSE_LOGS else 'OFF'}{C_RESET}")
+            continue
+        elif user_input.lower() == "/start":
+            print_header("RAG It Interactive Scope Selector")
+            ingested_docs = vs.list_documents()
+            print(f"{C_CYAN}Select a document scope for the chat session:{C_RESET}")
             print(f"  [0] {C_GREEN}Use all ingested documents (global search){C_RESET}")
             for idx, doc in enumerate(ingested_docs):
                 print(f"  [{idx+1}] {doc}")
             new_idx = len(ingested_docs) + 1
-            print(f"  [{new_idx}] {C_YELLOW}Ingest a new document (PDF, Excel, Word, TXT, MD)...{C_RESET}")
-
+            print(f"  [{new_idx}] {C_YELLOW}Ingest a new document (PDF, Excel, Word, CSV, TXT, MD)...{C_RESET}")
+            
             while True:
                 try:
                     choice = input(f"\nSelect option (0-{new_idx}): ").strip()
@@ -537,7 +869,7 @@ def main():
                         if not p_path.exists():
                             print(f"{C_RED}[Error] Path does not exist: {new_path}{C_RESET}")
                             continue
-
+                        
                         SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".xlsx", ".xls", ".csv", ".txt", ".md"}
                         ingest_files = []
                         if p_path.is_file():
@@ -548,18 +880,18 @@ def main():
                                 continue
                         elif p_path.is_dir():
                             ingest_files = sorted([p for p in p_path.iterdir() if p.is_file() and p.suffix.lower() in SUPPORTED_EXTENSIONS])
-
+                            
                         if not ingest_files:
                             print(f"{C_RED}[Error] No supported document files found in directory: {p_path}{C_RESET}")
                             continue
-
+                        
                         print(f"{C_CYAN}[System] Ingesting {len(ingest_files)} document(s)...{C_RESET}")
                         doc_parser = DocumentProcessor()
-
+                        
                         # Reset tokens
                         from multimodal_rag.config import TokenTracker
                         TokenTracker.reset()
-
+                        
                         for pf in ingest_files:
                             if pf.name in ingested_docs:
                                 print(f"{C_YELLOW}[Notice] Document '{pf.name}' is already ingested. Skipping.{C_RESET}")
@@ -576,7 +908,7 @@ def main():
                                 print(f"{C_GREEN}[Success] Indexed '{pf.name}'{C_RESET}")
                             except Exception as e:
                                 print(f"{C_RED}[Error] Failed to index '{pf.name}': {e}{C_RESET}")
-
+                        
                         selected_doc = ingest_files[0].name if len(ingest_files) == 1 else None
                         if len(ingest_files) > 1:
                             print(f"{C_GREEN}[Scope] Global search enabled (using all ingested files).{C_RESET}")
@@ -588,268 +920,448 @@ def main():
                 except ValueError:
                     print(f"{C_RED}Please enter a valid choice.{C_RESET}")
                 except (KeyboardInterrupt, EOFError):
-                    print("\nSetup wizard aborted. Exiting.")
-                    return
-        else:
-            print(f"{C_GREEN}[Scope] Scoped query filter pre-set to: '{selected_doc}'{C_RESET}")
+                    print("\nScope switch cancelled.")
+                    break
+            continue
+        elif user_input.lower() == "/stats":
+            print_header("Current Session Scorecard & Metrics")
+            session_duration = time.time() - session_start_time
+            avg_latency = session_total_latency / session_queries if session_queries > 0 else 0.0
+            print(f"  - Total Chat Turns:    {session_queries}")
+            print(f"  - Avg Response Time:   {avg_latency:.2f} seconds")
+            if session_docs_cited:
+                print(f"  - Documents Cited:     {', '.join(session_docs_cited)}")
+            if session_pages_cited:
+                print(f"  - Pages Cited:         {', '.join(str(p) for p in sorted(list(session_pages_cited)))}")
+            print(f"  - Session Duration:    {session_duration:.1f} seconds")
+            print(f"  - Total Session Tokens:{session_prompt_tokens:,} prompt | {session_completion_tokens:,} completion")
+            print(f"{C_CYAN}=================================================={C_RESET}")
+            continue
+        elif user_input.lower() == "/evaluate":
+            import evaluate_rag
+            evaluate_rag.main()
+            continue
+        elif user_input.lower() == "/clear":
+            history = []
+            print(f"{C_CYAN}[System] Session memory cleared.{C_RESET}")
+            continue
+        elif user_input.lower().startswith("/key"):
+            parts = user_input.split(maxsplit=1)
+            if len(parts) > 1:
+                new_key = parts[1].strip()
+            else:
+                import getpass
+                new_key = getpass.getpass("Enter new OpenAI API Key: ").strip()
             
-        # Session metrics tracking
-        session_queries = 0
-        session_total_latency = 0.0
-        session_pages_cited = set()
-        session_docs_cited = set()
-        session_start_time = time.time()
-        session_prompt_tokens = 0
-        session_completion_tokens = 0
+            if new_key:
+                try:
+                    save_openai_api_key(new_key)
+                    em.reset()
+                    vs = VectorStoreManager(em.dimension)
+                    bm = BM25IndexManager()
+                    print(f"{C_GREEN}[Success] API Key saved and updated for this session.{C_RESET}")
+                except Exception as e:
+                    print(f"{C_RED}[Error] Failed to save key: {e}{C_RESET}")
+            else:
+                print(f"{C_RED}[Error] API Key cannot be empty.{C_RESET}")
+            continue
+        elif user_input.lower() == "/help":
+            print(f"{C_CYAN}Available Commands:{C_RESET}")
+            print("  /exit, /quit - Close loop")
+            print("  /decomp      - Toggle query decomposition")
+            print("  /open        - Toggle auto-opening cited images")
+            print("  /verbose     - Toggle detailed pipeline logs")
+            print("  /start       - Switch active document scope or ingest new file")
+            print("  /stats       - View current session scorecard metrics")
+            print("  /evaluate    - Run the automated QA benchmark scorecard suite")
+            print("  /clear       - Clear active memory history")
+            print("  /key         - Update OpenAI API Key dynamically")
+            continue
+        elif user_input.startswith("/"):
+            print(f"{C_RED}Unknown command: {user_input}. Type /help for options.{C_RESET}")
+            continue
+
+        # Execute RAG query
+        print(f"{C_CYAN}[RAG] Processing question...{C_RESET}")
+        try:
+            from multimodal_rag.config import TokenTracker
+            TokenTracker.reset()
+            start_t = time.time()
+            answer, sources = execute_query(user_input, history, decomp, 10, selected_doc)
+            latency = time.time() - start_t
+            
+            # Update session stats
+            session_queries += 1
+            session_total_latency += latency
+            session_prompt_tokens += (TokenTracker.prompt_tokens + TokenTracker.embedding_tokens)
+            session_completion_tokens += TokenTracker.completion_tokens
+            for doc, page in re.findall(r'\[(?:Image|Table):\s*([^,]+),\s*Page:\s*(\d+)[^\]]*\]', answer):
+                session_docs_cited.add(doc.strip())
+                session_pages_cited.add(int(page.strip()))
+            
+            print(f"\n{C_GREEN}{C_BOLD}RAG It >{C_RESET}\n{format_cli_markdown(answer)}")
+            
+            # Print single-query metrics right there
+            print(f"\n{C_CYAN}  [Query Latency: {latency:.2f}s | Context Size: {len(sources)} chunks | Tokens: {TokenTracker.prompt_tokens + TokenTracker.embedding_tokens}p + {TokenTracker.completion_tokens}c]{C_RESET}")
+            
+            # Append to active session history
+            history.append({"role": "user", "content": user_input})
+            history.append({"role": "assistant", "content": answer})
+
+            # Visual citations check
+            cited_media = parse_citations(answer)
+            if cited_media:
+                print(f"\n{C_YELLOW}[Citations] Cited media: {cited_media}{C_RESET}")
+                if open_v:
+                    for img in cited_media:
+                        confirm = input(f"{C_CYAN}[System] Auto-open active. Launch visual '{img}'? (Y/n): {C_RESET}").strip().lower()
+                        if confirm != 'n':
+                            open_visual_file(img)
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            print(f"{C_RED}[Error] Failed to process query: {e}{C_RESET}")
+
+def print_session_scorecard(session_queries, session_total_latency, session_docs_cited, session_pages_cited, session_start_time, session_prompt_tokens, session_completion_tokens):
+    print_header("Session Scorecard & Metrics")
+    session_duration = time.time() - session_start_time
+    avg_latency = session_total_latency / session_queries if session_queries > 0 else 0.0
+    print(f"  - Total Chat Turns:    {session_queries}")
+    print(f"  - Avg Response Time:   {avg_latency:.2f} seconds")
+    if session_docs_cited:
+        print(f"  - Documents Cited:     {', '.join(session_docs_cited)}")
+    if session_pages_cited:
+        print(f"  - Pages Cited:         {', '.join(str(p) for p in sorted(list(session_pages_cited)))}")
+    print(f"  - Session Duration:    {session_duration:.1f} seconds")
+    print(f"  - Total Session Tokens:{session_prompt_tokens:,} prompt | {session_completion_tokens:,} completion")
+    print(f"{C_CYAN}=================================================={C_RESET}")
+    print("\nExiting chat. Goodbye!")
+
+def interactive_menu(pre_selected_doc=None):
+    global VERBOSE_LOGS
+    print_header("RAG It Multimodal RAG CLI Control Panel")
+    
+    # Check if API Key is configured
+    from multimodal_rag.config import get_openai_api_key
+    api_key = get_openai_api_key()
+    
+    if not api_key:
+        print(f"{C_YELLOW}[Warning] OpenAI API Key is not configured yet.{C_RESET}")
+        print(f"Please select option [3] to set your API Key, or place it in a local .env file.{C_RESET}")
+        print("-" * 50)
         
-        # Display controls
-        print(f"\n{C_CYAN}Controls:{C_RESET}")
-        print("  - Type your question and hit Enter.")
-        print("  - Type /exit or /quit to end the chat.")
-        print(f"  - Type /decomp to toggle Query Decomposition. (Currently: {C_BOLD}{'ON' if decomp else 'OFF'}{C_RESET})")
-        print(f"  - Type /open to toggle Auto-Opening Cited Images. (Currently: {C_BOLD}{'ON' if open_v else 'OFF'}{C_RESET})")
-        print(f"  - Type /verbose to toggle detailed system logs. (Currently: {C_BOLD}{'ON' if VERBOSE_LOGS else 'OFF'}{C_RESET})")
-        print("  - Type /stats to view your current session metrics scorecard.")
-        print("  - Type /clear to wipe the active session memory/history.")
-        print("  - Type /help to see this menu.")
-        print("-" * 60)
-
-        while True:
-            try:
-                user_input = input(f"\n{C_BOLD}User > {C_RESET}").strip()
-            except (KeyboardInterrupt, EOFError):
-                print_header("Session Scorecard & Metrics")
-                session_duration = time.time() - session_start_time
-                avg_latency = session_total_latency / session_queries if session_queries > 0 else 0.0
-                print(f"  - Total Chat Turns:    {session_queries}")
-                print(f"  - Avg Response Time:   {avg_latency:.2f} seconds")
-                if session_docs_cited:
-                    print(f"  - Documents Cited:     {', '.join(session_docs_cited)}")
-                if session_pages_cited:
-                    print(f"  - Pages Cited:         {', '.join(str(p) for p in sorted(list(session_pages_cited)))}")
-                print(f"  - Session Duration:    {session_duration:.1f} seconds")
-                print(f"  - Total Session Tokens:{session_prompt_tokens:,} prompt | {session_completion_tokens:,} completion")
-                print(f"{C_CYAN}=================================================={C_RESET}")
-                print("\nExiting chat. Goodbye!")
-                break
-
-            if not user_input:
+    while True:
+        print(f"\n{C_BOLD}{C_CYAN}Select a service to start:{C_RESET}")
+        print(f"  [1] {C_GREEN}Start Interactive Chat Session{C_RESET}")
+        print(f"  [2] Ingest Documents (File or Directory)")
+        print(f"  [3] Configure OpenAI API Key")
+        print(f"  [4] View Database Stats & Ingested Documents")
+        print(f"  [5] Delete a Document's Index")
+        print(f"  [6] Run QA Groundedness Evaluation Benchmark")
+        print(f"  [7] {C_RED}Reset (Wipe) Search Databases{C_RESET}")
+        print(f"  [8] Exit")
+        
+        try:
+            choice = input(f"\nEnter choice (1-8): ").strip()
+            if not choice:
                 continue
-
-            # Command checks
-            if user_input.lower() in ["/exit", "/quit"]:
-                print_header("Session Scorecard & Metrics")
-                session_duration = time.time() - session_start_time
-                avg_latency = session_total_latency / session_queries if session_queries > 0 else 0.0
-                print(f"  - Total Chat Turns:    {session_queries}")
-                print(f"  - Avg Response Time:   {avg_latency:.2f} seconds")
-                if session_docs_cited:
-                    print(f"  - Documents Cited:     {', '.join(session_docs_cited)}")
-                if session_pages_cited:
-                    print(f"  - Pages Cited:         {', '.join(str(p) for p in sorted(list(session_pages_cited)))}")
-                print(f"  - Session Duration:    {session_duration:.1f} seconds")
-                print(f"  - Total Session Tokens:{session_prompt_tokens:,} prompt | {session_completion_tokens:,} completion")
-                print(f"{C_CYAN}=================================================={C_RESET}")
-                print("Ending chat. Goodbye!")
-                break
-            elif user_input.lower() == "/decomp":
-                decomp = not decomp
-                print(f"{C_YELLOW}[Toggle] Query Decomposition is now {'ON' if decomp else 'OFF'}{C_RESET}")
-                continue
-            elif user_input.lower() == "/open":
-                open_v = not open_v
-                print(f"{C_YELLOW}[Toggle] Auto-Opening of Visuals is now {'ON' if open_v else 'OFF'}{C_RESET}")
-                continue
-            elif user_input.lower() == "/verbose":
-                VERBOSE_LOGS = not VERBOSE_LOGS
-                print(f"{C_YELLOW}[Toggle] Detailed system logging is now {'ON' if VERBOSE_LOGS else 'OFF'}{C_RESET}")
-                continue
-            elif user_input.lower() == "/start":
-                print_header("RAG It Interactive Scope Selector")
-                ingested_docs = vs.list_documents()
-                print(f"{C_CYAN}Select a document scope for the chat session:{C_RESET}")
-                print(f"  [0] {C_GREEN}Use all ingested documents (global search){C_RESET}")
-                for idx, doc in enumerate(ingested_docs):
-                    print(f"  [{idx+1}] {doc}")
-                new_idx = len(ingested_docs) + 1
-                print(f"  [{new_idx}] {C_YELLOW}Ingest a new document (PDF, Excel, Word, CSV, TXT, MD)...{C_RESET}")
-                
-                while True:
-                    try:
-                        choice = input(f"\nSelect option (0-{new_idx}): ").strip()
-                        if not choice:
-                            choice = "0"
-                        choice_val = int(choice)
-                        if choice_val == 0:
-                            selected_doc = None
-                            print(f"{C_GREEN}[Scope] Global search enabled.{C_RESET}")
-                            break
-                        elif 1 <= choice_val <= len(ingested_docs):
-                            selected_doc = ingested_docs[choice_val - 1]
-                            print(f"{C_GREEN}[Scope] Scoped query filter set to: '{selected_doc}'{C_RESET}")
-                            break
-                        elif choice_val == new_idx:
-                            new_path = input(f"{C_YELLOW}Enter path to new file or directory: {C_RESET}").strip()
-                            if not new_path:
-                                print(f"{C_RED}[Error] Path cannot be empty.{C_RESET}")
-                                continue
-                            p_path = Path(new_path)
-                            if not p_path.exists():
-                                print(f"{C_RED}[Error] Path does not exist: {new_path}{C_RESET}")
-                                continue
-                            
-                            SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".xlsx", ".xls", ".csv", ".txt", ".md"}
-                            ingest_files = []
-                            if p_path.is_file():
-                                if p_path.suffix.lower() in SUPPORTED_EXTENSIONS:
-                                    ingest_files.append(p_path)
-                                else:
-                                    print(f"{C_RED}[Error] Unsupported file format.{C_RESET}")
-                                    continue
-                            elif p_path.is_dir():
-                                ingest_files = sorted([p for p in p_path.iterdir() if p.is_file() and p.suffix.lower() in SUPPORTED_EXTENSIONS])
-                                
-                            if not ingest_files:
-                                print(f"{C_RED}[Error] No supported document files found in directory: {p_path}{C_RESET}")
-                                continue
-                            
-                            print(f"{C_CYAN}[System] Ingesting {len(ingest_files)} document(s)...{C_RESET}")
-                            doc_parser = DocumentProcessor()
-                            
-                            # Reset tokens
-                            from multimodal_rag.config import TokenTracker
-                            TokenTracker.reset()
-                            
-                            for pf in ingest_files:
-                                if pf.name in ingested_docs:
-                                    print(f"{C_YELLOW}[Notice] Document '{pf.name}' is already ingested. Skipping.{C_RESET}")
-                                    continue
-                                print(f"{C_CYAN}[System] Processing '{pf.name}'...{C_RESET}")
-                                try:
-                                    chunks = doc_parser.process_file(str(pf))
-                                    if not chunks:
-                                        continue
-                                    contents = [c["content"] for c in chunks]
-                                    embeddings_list = em.embed_documents(contents)
-                                    vs.add_chunks(chunks, embeddings_list)
-                                    bm.add_chunks(chunks)
-                                    print(f"{C_GREEN}[Success] Indexed '{pf.name}'{C_RESET}")
-                                except Exception as e:
-                                    print(f"{C_RED}[Error] Failed to index '{pf.name}': {e}{C_RESET}")
-                            
-                            selected_doc = ingest_files[0].name if len(ingest_files) == 1 else None
-                            if len(ingest_files) > 1:
-                                print(f"{C_GREEN}[Scope] Global search enabled (using all ingested files).{C_RESET}")
-                            else:
-                                print(f"{C_GREEN}[Scope] Scoped query filter set to: '{selected_doc}'{C_RESET}")
-                            break
-                        else:
-                            print(f"{C_RED}Invalid option. Please enter 0 to {new_idx}.{C_RESET}")
-                    except ValueError:
-                        print(f"{C_RED}Please enter a valid choice.{C_RESET}")
-                    except (KeyboardInterrupt, EOFError):
-                        print("\nScope switch cancelled.")
-                        break
-                continue
-            elif user_input.lower() == "/stats":
-                print_header("Current Session Scorecard & Metrics")
-                session_duration = time.time() - session_start_time
-                avg_latency = session_total_latency / session_queries if session_queries > 0 else 0.0
-                print(f"  - Total Chat Turns:    {session_queries}")
-                print(f"  - Avg Response Time:   {avg_latency:.2f} seconds")
-                if session_docs_cited:
-                    print(f"  - Documents Cited:     {', '.join(session_docs_cited)}")
-                if session_pages_cited:
-                    print(f"  - Pages Cited:         {', '.join(str(p) for p in sorted(list(session_pages_cited)))}")
-                print(f"  - Session Duration:    {session_duration:.1f} seconds")
-                print(f"  - Total Session Tokens:{session_prompt_tokens:,} prompt | {session_completion_tokens:,} completion")
-                print(f"{C_CYAN}=================================================={C_RESET}")
-                continue
-            elif user_input.lower() == "/evaluate":
+            
+            if choice == "1":
+                run_chat_session(pre_selected_doc)
+            elif choice == "2":
+                run_interactive_ingestion()
+            elif choice == "3":
+                run_interactive_config()
+            elif choice == "4":
+                run_interactive_list()
+            elif choice == "5":
+                run_interactive_delete()
+            elif choice == "6":
+                print_header("Running Groundedness Evaluation Benchmark")
                 import evaluate_rag
                 evaluate_rag.main()
-                continue
-            elif user_input.lower() == "/clear":
-                history = []
-                print(f"{C_CYAN}[System] Session memory cleared.{C_RESET}")
-                continue
-            elif user_input.lower().startswith("/key"):
-                parts = user_input.split(maxsplit=1)
-                if len(parts) > 1:
-                    new_key = parts[1].strip()
-                else:
-                    import getpass
-                    new_key = getpass.getpass("Enter new OpenAI API Key: ").strip()
-                
-                if new_key:
-                    try:
-                        save_openai_api_key(new_key)
-                        em.reset()
-                        vs = VectorStoreManager(em.dimension)
-                        bm = BM25IndexManager()
-                        print(f"{C_GREEN}[Success] API Key saved and updated for this session.{C_RESET}")
-                    except Exception as e:
-                        print(f"{C_RED}[Error] Failed to save key: {e}{C_RESET}")
-                else:
-                    print(f"{C_RED}[Error] API Key cannot be empty.{C_RESET}")
-                continue
-            elif user_input.lower() == "/help":
-                print(f"{C_CYAN}Available Commands:{C_RESET}")
-                print("  /exit, /quit - Close loop")
-                print("  /decomp      - Toggle query decomposition")
-                print("  /open        - Toggle auto-opening cited images")
-                print("  /verbose     - Toggle detailed pipeline logs")
-                print("  /start       - Switch active document scope or ingest new file")
-                print("  /stats       - View current session scorecard metrics")
-                print("  /evaluate    - Run the automated QA groundedness evaluation benchmark suite")
-                print("  /clear       - Clear active memory history")
-                print("  /key         - Update OpenAI API Key dynamically")
-                continue
-            elif user_input.startswith("/"):
-                print(f"{C_RED}Unknown command: {user_input}. Type /help for options.{C_RESET}")
+            elif choice == "7":
+                run_interactive_reset()
+            elif choice == "8":
+                print("\nExiting Control Panel. Goodbye!")
+                break
+            else:
+                print(f"{C_RED}Invalid choice. Please select an option between 1 and 8.{C_RESET}")
+        except (KeyboardInterrupt, EOFError):
+            print("\nExiting Control Panel. Goodbye!")
+            break
+
+def main():
+    global VERBOSE_LOGS
+    parser = argparse.ArgumentParser(description="RAG It Multimodal RAG CLI Interface")
+    subparsers = parser.add_subparsers(dest="command", help="Commands")
+
+    # config command
+    config_p = subparsers.add_parser("config", help="Configure OpenAI API Key")
+    config_p.add_argument("--key", required=False, help="OpenAI API Key string (optional, will prompt securely if omitted)")
+
+    # ingest command
+    ingest_p = subparsers.add_parser("ingest", help="Ingest a document file (PDF, Word, Excel, TXT, MD)")
+    ingest_p.add_argument("file_path", help="Path to local document file or folder")
+    ingest_p.add_argument("--force", action="store_true", help="Force re-ingestion even if document already exists")
+
+    # list command
+    subparsers.add_parser("list", help="List all ingested documents and statistics")
+
+    # delete command
+    delete_p = subparsers.add_parser("delete", help="Wipe index for a specific document")
+    delete_p.add_argument("doc_name", help="Name of document to delete")
+
+    # reset command
+    subparsers.add_parser("reset", help="Wipe all vector and keyword search indices")
+
+    # evaluate command
+    subparsers.add_parser("evaluate", help="Run the automated QA groundedness evaluation benchmark suite")
+
+    # query command
+    query_p = subparsers.add_parser("query", help="Run a single question query")
+    query_p.add_argument("query_text", help="Question text")
+    query_p.add_argument("--no-decomp", action="store_true", help="Turn off query decomposition")
+    query_p.add_argument("--no-open", action="store_true", help="Turn off auto-opening cited images")
+    query_p.add_argument("--verbose", "-v", action="store_true", help="Show detailed system execution logs")
+    query_p.add_argument("--doc", help="Filter search scope to specific document")
+
+    # start command (launches control panel menu)
+    start_p = subparsers.add_parser("start", help="Launch the interactive RAG It CLI Control Panel menu")
+    start_p.add_argument("--doc", help="Optionally pre-select active document scope")
+
+    # chat command (launches interactive chat directly)
+    chat_p = subparsers.add_parser("chat", help="Start the interactive chat session directly")
+    chat_p.add_argument("--no-decomp", action="store_true", help="Bypass query decomposition by default")
+    chat_p.add_argument("--no-open", action="store_true", help="Bypass auto-opening cited images by default")
+    chat_p.add_argument("--verbose", "-v", action="store_true", help="Show detailed system execution logs by default")
+    chat_p.add_argument("--doc", help="Filter chat search scope to specific document")
+
+    args = parser.parse_args()
+
+    # Default command is "start" (launch control panel) if no arguments are provided
+    if not args.command:
+        interactive_menu()
+        return
+
+    # --- 1. CONFIG COMMAND ---
+    if args.command == "config":
+        print_header("Configuring API Key")
+        try:
+            key = args.key
+            if not key:
+                import getpass
+                key = getpass.getpass("Enter OpenAI API Key: ").strip()
+            if not key:
+                print(f"{C_RED}[Error] API Key cannot be empty.{C_RESET}")
+                return
+            save_openai_api_key(key)
+            print(f"{C_GREEN}[Success] API Key saved successfully to settings file.{C_RESET}")
+        except Exception as e:
+            print(f"{C_RED}[Error] Failed to save key: {e}{C_RESET}")
+
+    # --- 2. INGEST COMMAND ---
+    elif args.command == "ingest":
+        print_header("Ingesting Document(s)")
+        input_path = Path(args.file_path)
+        if not input_path.exists():
+            print(f"{C_RED}[Error] Path does not exist: {input_path}{C_RESET}")
+            return
+
+        SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".xlsx", ".xls", ".csv", ".txt", ".md"}
+        ingest_files = []
+        if input_path.is_file():
+            if input_path.suffix.lower() in SUPPORTED_EXTENSIONS:
+                ingest_files.append(input_path)
+            else:
+                print(f"{C_RED}[Error] Unsupported file format: {input_path.suffix}. Supported: {', '.join(SUPPORTED_EXTENSIONS)}{C_RESET}")
+                return
+        elif input_path.is_dir():
+            ingest_files = sorted([p for p in input_path.iterdir() if p.is_file() and p.suffix.lower() in SUPPORTED_EXTENSIONS])
+            if not ingest_files:
+                print(f"{C_YELLOW}[Warning] No supported document files found in directory: {input_path}{C_RESET}")
+                return
+            print(f"{C_CYAN}[System] Found {len(ingest_files)} document files in directory: {input_path}{C_RESET}")
+
+        print(f"{C_CYAN}[System] Initializing pipelines...{C_RESET}")
+        em = EmbeddingPipeline()
+        vs = VectorStoreManager(em.dimension)
+        bm = BM25IndexManager()
+        doc_parser = DocumentProcessor()
+
+        # Reset token tracker
+        from multimodal_rag.config import TokenTracker
+        TokenTracker.reset()
+
+        ingested_count = 0
+        skipped_count = 0
+
+        # Check duplicate
+        docs = vs.list_documents()
+
+        for idx, doc_path in enumerate(ingest_files):
+            print(f"\n{C_CYAN}--- Processing [{idx+1}/{len(ingest_files)}] {doc_path.name} ---{C_RESET}")
+            if doc_path.name in docs and not args.force:
+                print(f"{C_YELLOW}[Notice] Document '{doc_path.name}' is already ingested. Skipping.{C_RESET}")
+                skipped_count += 1
                 continue
 
-            # Execute RAG query
-            print(f"{C_CYAN}[RAG] Processing question...{C_RESET}")
+            if doc_path.name in docs and args.force:
+                print(f"{C_CYAN}[System] Force flag enabled. Wiping existing index for '{doc_path.name}'...{C_RESET}")
+                vs.delete_document(doc_path.name)
+                bm.delete_document(doc_path.name)
+
+            print(f"{C_CYAN}[System] Parsing document structures (pages, headers, tables, images)...{C_RESET}")
             try:
-                from multimodal_rag.config import TokenTracker
-                TokenTracker.reset()
-                start_t = time.time()
-                answer, sources = execute_query(user_input, history, decomp, 10, selected_doc)
-                latency = time.time() - start_t
-                
-                # Update session stats
-                session_queries += 1
-                session_total_latency += latency
-                session_prompt_tokens += (TokenTracker.prompt_tokens + TokenTracker.embedding_tokens)
-                session_completion_tokens += TokenTracker.completion_tokens
-                for doc, page in re.findall(r'\[(?:Image|Table):\s*([^,]+),\s*Page:\s*(\d+)[^\]]*\]', answer):
-                    session_docs_cited.add(doc.strip())
-                    session_pages_cited.add(int(page.strip()))
-                
-                print(f"\n{C_GREEN}{C_BOLD}RAG It >{C_RESET}\n{format_cli_markdown(answer)}")
-                
-                # Print single-query metrics right there
-                print(f"\n{C_CYAN}  [Query Latency: {latency:.2f}s | Context Size: {len(sources)} chunks | Tokens: {TokenTracker.prompt_tokens + TokenTracker.embedding_tokens}p + {TokenTracker.completion_tokens}c]{C_RESET}")
-                
-                # Append to active session history
-                history.append({"role": "user", "content": user_input})
-                history.append({"role": "assistant", "content": answer})
+                chunks = doc_parser.process_file(str(doc_path))
+                if not chunks:
+                    print(f"{C_YELLOW}[Warning] No chunks extracted from document.{C_RESET}")
+                    continue
 
-                # Visual citations check
-                cited_media = parse_citations(answer)
-                if cited_media:
-                    print(f"\n{C_YELLOW}[Citations] Cited media: {cited_media}{C_RESET}")
-                    if open_v:
-                        for img in cited_media:
-                            # Prompt before opening so it doesn't steal focus unexpectedly
-                            confirm = input(f"{C_CYAN}[System] Auto-open active. Launch visual '{img}'? (Y/n): {C_RESET}").strip().lower()
-                            if confirm != 'n':
-                                open_visual_file(img)
+                print(f"{C_CYAN}[System] Chunking complete. Generating embeddings for {len(chunks)} elements...{C_RESET}")
+                contents = [c["content"] for c in chunks]
+                embeddings_list = em.embed_documents(contents)
+
+                print(f"{C_CYAN}[System] Writing vectors to ChromaDB collection...{C_RESET}")
+                vs.add_chunks(chunks, embeddings_list)
+
+                print(f"{C_CYAN}[System] Writing terms to BM25 index...{C_RESET}")
+                bm.add_chunks(chunks)
+
+                print(f"{C_GREEN}[Success] Ingested '{doc_path.name}' successfully!{C_RESET}")
+                ingested_count += 1
             except Exception as e:
                 import traceback
                 traceback.print_exc()
-                print(f"{C_RED}[Error] Failed to process query: {e}{C_RESET}")
+                print(f"{C_RED}[Error] Ingestion failed for '{doc_path.name}': {e}{C_RESET}")
+
+        print(f"\n{C_GREEN}=== Ingestion Batch Complete ==={C_RESET}")
+        print(f"  - Total Files Found:     {len(ingest_files)}")
+        print(f"  - Successfully Indexed:  {ingested_count}")
+        print(f"  - Skipped (Duplicates):  {skipped_count}")
+        print(f"{C_CYAN}--------------------------------------------------{C_RESET}")
+        print(f"{C_CYAN}[Cumulative Ingestion OpenAI Token Usage]{C_RESET}")
+        print(f"  - Embedding Prompt Tokens:  {TokenTracker.embedding_tokens:,}")
+        print(f"  - Chat VLM (Table/Image):   {TokenTracker.prompt_tokens:,} prompt | {TokenTracker.completion_tokens:,} completion")
+        print(f"  - Total Ingestion Tokens:   {TokenTracker.embedding_tokens + TokenTracker.prompt_tokens + TokenTracker.completion_tokens:,}")
+        print(f"{C_CYAN}--------------------------------------------------{C_RESET}")
+
+    # --- 3. LIST COMMAND ---
+    elif args.command == "list":
+        print_header("Index Database Overview")
+        try:
+            em = EmbeddingPipeline()
+            vs = VectorStoreManager(em.dimension)
+            stats = vs.get_stats()
+            docs = vs.list_documents()
+
+            print(f"Total Chunks: {C_BOLD}{stats.get('total_chunks', 0)}{C_RESET}")
+            print(f"Text Chunks:  {stats.get('text_count', 0)}")
+            print(f"Table Chunks: {stats.get('table_count', 0)}")
+            print(f"Image Chunks: {stats.get('image_count', 0)}")
+            print("-" * 30)
+            print("Ingested Documents:")
+            if docs:
+                for doc in docs:
+                    print(f" - {C_GREEN}{doc}{C_RESET}")
+            else:
+                print(" (No documents ingested yet)")
+        except Exception as e:
+            print(f"{C_RED}[Error] Failed to fetch list: {e}{C_RESET}")
+
+    # --- 4. DELETE COMMAND ---
+    elif args.command == "delete":
+        print_header(f"Deleting Document: {args.doc_name}")
+        try:
+            em = EmbeddingPipeline()
+            vs = VectorStoreManager(em.dimension)
+            bm = BM25IndexManager()
+
+            vs.delete_document(args.doc_name)
+            bm.delete_document(args.doc_name)
+            print(f"{C_GREEN}[Success] Document '{args.doc_name}' has been successfully wiped from indexes.{C_RESET}")
+        except Exception as e:
+            print(f"{C_RED}[Error] Delete failed: {e}{C_RESET}")
+
+    # --- 5. RESET COMMAND ---
+    elif args.command == "reset":
+        print_header("CRITICAL: Resetting Databases")
+        confirm = input(f"{C_RED}Are you absolutely sure you want to delete all vectors and search indexes? (y/N): {C_RESET}").strip().lower()
+        if confirm != 'y':
+            print("Aborted.")
+            return
+
+        try:
+            em = EmbeddingPipeline()
+            vs = VectorStoreManager(em.dimension)
+            bm = BM25IndexManager()
+
+            # Delete all documents one by one
+            docs = vs.list_documents()
+            for doc in docs:
+                vs.delete_document(doc)
+                bm.delete_document(doc)
+
+            vs.reset_db()
+            bm.reset_db()
+            print(f"{C_GREEN}[Success] Wiped vector database and keyword search index successfully.{C_RESET}")
+        except Exception as e:
+            print(f"{C_RED}[Error] Reset failed: {e}{C_RESET}")
+
+    # --- 5.5 EVALUATE COMMAND ---
+    elif args.command == "evaluate":
+        import evaluate_rag
+        evaluate_rag.main()
+
+    # --- 6. QUERY COMMAND ---
+    elif args.command == "query":
+        print_header("Executing RAG Query")
+        if args.verbose:
+            VERBOSE_LOGS = True
+        decomp = not args.no_decomp
+        open_v = not args.no_open
+        print(f"Active Toggles: Decomposition={decomp}, Auto-Open Cited Visuals={open_v}, Verbose Logs={VERBOSE_LOGS}")
+        print(f"Query: {C_BOLD}{args.query_text}{C_RESET}")
+
+        try:
+            from multimodal_rag.config import TokenTracker
+            TokenTracker.reset()
+            import time
+            start_t = time.time()
+            answer, sources = execute_query(args.query_text, [], decomp, 10, args.doc)
+            latency = time.time() - start_t
+            print(f"\n{C_GREEN}{C_BOLD}Answer:{C_RESET}\n{format_cli_markdown(answer)}\n")
+            
+            # Parse cited pages
+            cited_pages = sorted(list(set(int(page) for doc, page in re.findall(r'\[(?:Image|Table):\s*([^,]+),\s*Page:\s*(\d+)[^\]]*\]', answer))))
+            
+            # Print single-query metrics
+            print(f"{C_CYAN}--------------------------------------------------{C_RESET}")
+            print(f"{C_CYAN}[Query Metrics]{C_RESET}")
+            print(f"  - Latency:             {latency:.2f} seconds")
+            print(f"  - Context Size:        {len(sources)} retrieved chunks")
+            if cited_pages:
+                print(f"  - Cited Pages:         {', '.join(str(p) for p in cited_pages)}")
+            print(f"  - OpenAI Token Usage:  {TokenTracker.prompt_tokens + TokenTracker.embedding_tokens:,} prompt | {TokenTracker.completion_tokens:,} completion")
+            print(f"{C_CYAN}--------------------------------------------------{C_RESET}")
+            
+            # Citation handling
+            cited_media = parse_citations(answer)
+            if cited_media:
+                print(f"{C_YELLOW}Cited Visuals in Response: {cited_media}{C_RESET}")
+                if open_v:
+                    for img in cited_media:
+                        open_visual_file(img)
+        except Exception as e:
+            print(f"{C_RED}[Error] Query execution failed: {e}{C_RESET}")
+
+    # --- 7. START COMMAND ---
+    elif args.command == "start":
+        interactive_menu(args.doc)
+
+    # --- 8. CHAT COMMAND ---
+    elif args.command == "chat":
+        run_chat_session(args.doc, not args.no_decomp, not args.no_open, args.verbose)
 
 if __name__ == "__main__":
     main()
