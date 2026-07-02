@@ -1,0 +1,11 @@
+# Core dependencies for Multimodal RAG
+PyMuPDF>=1.21.0
+chromadb>=0.4.0
+rank-bm25>=0.2.2
+openai>=1.0.0
+fastapi>=0.95.0
+uvicorn>=0.20.0
+python-multipart>=0.0.5
+transformers>=4.20.0
+torch>=2.0.0
+numpy>=1.20.0

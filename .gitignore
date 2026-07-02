@@ -1,0 +1,34 @@
+# Python bytecode / caches
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Local Database, Caches, and Ingested Data
+data/*
+!data/documents/
+data/documents/*
+!data/documents/.gitkeep
+
+# Virtual Environments
+.venv/
+env/
+venv/
+ENV/
+
+# Configuration and Keys
+.env
+settings.json
+
+# IDEs and Editors
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+
+# OS Files
+.DS_Store
+Thumbs.db

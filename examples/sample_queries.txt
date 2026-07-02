@@ -1,0 +1,20 @@
+# Sample Queries for RAG It Search Engine
+
+## Document Statistics and Overview
+- list all ingested documents
+- what are the metrics of the application?
+- /stats
+
+## Figure and Visual Summaries
+- summarize every figure in biosensors.pdf in one paragraph
+- show me Figure 4
+- list all images in biosensors.pdf
+
+## Table Inspections
+- difference between Table 2 and Table 3
+- what is the limit of detection in Table 1?
+- show me Table 4
+
+## Code and Simulation Questions
+- generate a python script to simulate the biosensor behavior
+- what are the mathematical formulas described in biosensors.pdf?
