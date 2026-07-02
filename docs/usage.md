@@ -2,6 +2,16 @@
 
 This guide details how to setup, configure, and operate the **RAG It** search engine.
 
+## 🕹️ Primary Control Panel (Recommended)
+
+The easiest way to run the software is by launching the interactive Control Panel:
+```bash
+rag_it start
+```
+*(Or simply run `rag_it` without arguments. This opens a visual text-based menu listing all available services: Chat, Ingest, Config, Database Stats, Delete, Evaluate, and Reset).*
+
+---
+
 ## ⚙️ Configuration
 
 Set your OpenAI API Key (used for answer synthesis and automated evaluation):
@@ -23,7 +33,7 @@ The key is stored locally in `settings.json` in the root folder.
 
 ## 📂 Document Ingestion
 
-Place documents in `data/documents/` or point directly to any folder/file:
+You can ingest files directly through the Control Panel option `[2]`, or use the command line directly:
 
 ### 1. Ingest a local directory:
 ```bash
@@ -41,18 +51,18 @@ rag_it ingest "C:\path\to\document.pdf"
 
 ## 💬 Interactive Chat Console
 
-Launch the chat interface:
+You can start chatting via the Control Panel option `[1]`, or launch the chat session directly via:
 ```bash
-rag_it start
+rag_it chat
 ```
 
-### Active Console Commands:
-* `/start` - opens the document selector/ingestion wizard to change the active search scope.
-* `/key` - dynamically prompts for and updates the OpenAI API Key in the active session.
-* `/stats` - views session performance metrics (turn count, average latency, total prompt and completion tokens used).
-* `/evaluate` - triggers the automated QA benchmark suite.
-* `/clear` - clears the conversational context memory history.
-* `/decomp` - toggles semantic query decomposition (useful for complex comparative queries).
-* `/open` - toggles automatic opening of cited table/figure crops on your machine.
-* `/help` - views a list of all commands.
-* `/exit` - closes the chat console.
+### Active Console Commands (Slash Commands):
+* `/start`    - opens the document selector/ingestion wizard to change the active search scope.
+* `/key`      - dynamically prompts for and updates the OpenAI API Key in the active session.
+* `/stats`    - views session performance scorecard metrics (turn count, average latency, total prompt/completion tokens used).
+* `/evaluate` - triggers the automated QA benchmark evaluation suite.
+* `/clear`    - clears the conversational context memory history.
+* `/decomp`   - toggles semantic query decomposition (useful for complex comparative queries).
+* `/open`     - toggles automatic opening of cited table/figure crops on your machine.
+* `/help`     - views a list of all commands.
+* `/exit`     - closes the chat console.

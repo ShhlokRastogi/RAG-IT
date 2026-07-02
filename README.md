@@ -119,50 +119,49 @@ rag-it/
 
 Run commands via the Windows shortcut `rag_it` or by executing `python scripts/run.py`:
 
-### 1. Ingest Documents
-Ingest an individual file or an entire directory of supported files:
-```bash
-rag_it ingest "path/to/document_or_folder"
-```
-Use `--force` to re-ingest and overwrite existing document indexes:
-```bash
-rag_it ingest "path/to/document.pdf" --force
-```
-
-### 2. Start Interactive Chat
-Launch the interactive console chat window:
+### 🕹️ Primary Control Panel (Recommended)
+Launch the interactive Control Panel to manage all services in one visual menu:
 ```bash
 rag_it start
 ```
-Inside the active chat loop, you can use these slash commands:
-* `/start`    - switch document scope or ingest new files on the fly.
-* `/key`      - dynamically prompt and update the OpenAI API Key.
-* `/stats`    - view current chat session token counts and average latency metrics.
-* `/evaluate` - run the automated QA benchmark scorecard directly.
-* `/clear`    - clear active conversational memory history.
-* `/decomp`   - toggle semantic query decomposition.
-* `/open`     - toggle automatic opening of cited visual crops.
-* `/verbose`  - toggle detailed search execution logs.
-* `/help`     - view available commands.
-* `/exit`     - close the chat loop.
+*(Or simply run `rag_it` without arguments. This opens a menu with options to Start Chat, Ingest Documents, Set API Key, View Stats, Delete Indexes, Evaluate RAG, or Reset Databases).*
 
-### 3. Run Single Query
-Query the database directly from the terminal without entering the chat loop:
-```bash
-rag_it query "What is the limit of detection for Chlorpyrifos in Table 1?"
-```
+### 💬 Direct Subcommands
+For power users and scripting, you can also run commands directly:
 
-### 4. Run Evaluation Benchmark
-Execute the automated groundedness and retrieval recall evaluation benchmark:
-```bash
-rag_it evaluate
-```
-
-### 5. Database Reset
-Wipe all vector databases and keyword indexes:
-```bash
-rag_it reset
-```
+* **Start Chat directly**:
+  ```bash
+  rag_it chat
+  ```
+* **Ingest Documents**:
+  ```bash
+  rag_it ingest "path/to/document_or_folder"
+  ```
+  *(Add `--force` to overwrite existing indexes)*
+* **Configure OpenAI API Key securely**:
+  ```bash
+  rag_it config
+  ```
+* **Run Single Query**:
+  ```bash
+  rag_it query "Your question here"
+  ```
+* **List Ingested Documents**:
+  ```bash
+  rag_it list
+  ```
+* **Wipe specific Document Index**:
+  ```bash
+  rag_it delete "document_name.pdf"
+  ```
+* **Run Evaluation Benchmark**:
+  ```bash
+  rag_it evaluate
+  ```
+* **Wipe all databases**:
+  ```bash
+  rag_it reset
+  ```
 
 ---
 
