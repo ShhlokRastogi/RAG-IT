@@ -23,7 +23,7 @@ graph TD
     %% 2. Ingestion layer
     subgraph Ingestion ["1. Document Ingestion (document_processor.py)"]
         Parser["Document Processor<br/>(Text Splitters, PDF Table/Image Cropper)"]
-        Embedder["Embedding Engine (embeddings.py)<br/>(Local MiniLM / OpenAI API)"]
+        Embedder["Embedding Engine (embeddings.py)<br/>(Local MiniLM)"]
     end
     class Parser,Embedder ingest;
 

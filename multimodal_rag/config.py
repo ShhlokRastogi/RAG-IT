@@ -20,7 +20,6 @@ for directory in [UPLOAD_DIR, MEDIA_DIR, DB_DIR, KEYWORD_DIR]:
 SETTINGS_FILE = WORKSPACE_DIR / "settings.json"
 
 # Models Configuration
-OPENAI_EMBED_MODEL = "text-embedding-3-small"
 OPENAI_CHAT_MODEL = "gpt-4o"
 OPENAI_VLM_MODEL = "gpt-4o"
 
@@ -78,10 +77,7 @@ def save_openai_api_key(key: str):
     settings["openai_api_key"] = key
     save_settings(settings)
 
-def get_use_local_embeddings() -> bool:
-    """Check if the system should use local offline embeddings. Defaults to True."""
-    settings = get_settings()
-    return settings.get("use_local_embeddings", True)
+
 
 class TokenTracker:
     """Tracks cumulative OpenAI token usage during RAG execution loops."""

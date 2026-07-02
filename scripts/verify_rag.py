@@ -15,9 +15,6 @@ multimodal_rag.config.KEYWORD_DIR = multimodal_rag.config.WORKSPACE_DIR / "data"
 multimodal_rag.config.DB_DIR.mkdir(parents=True, exist_ok=True)
 multimodal_rag.config.KEYWORD_DIR.mkdir(parents=True, exist_ok=True)
 
-# force local fallback for verification
-os.environ["OPENAI_API_KEY"] = "" 
-
 from multimodal_rag.embeddings import EmbeddingPipeline
 from multimodal_rag.vector_store import VectorStoreManager
 from multimodal_rag.keyword_index import BM25IndexManager
@@ -27,12 +24,12 @@ from multimodal_rag.generator import ResponseGenerator
 def main():
     print("=== STARTING AUTOMATED RAG PIPELINE VERIFICATION ===")
     
-    # 1. Initialize Embedding Pipeline (will fallback to local 384-dim all-MiniLM-L6-v2)
+    # 1. Initialize Embedding Pipeline (strictly uses local 384-dim all-MiniLM-L6-v2)
     print("\n[Step 1] Initializing Embedding Pipeline...")
     embeddings = EmbeddingPipeline()
     print(f"Active Embedder class: {embeddings.embedder.__class__.__name__}")
     print(f"Dimension: {embeddings.dimension}")
-    expected_dim = 1536 if "OpenAI" in embeddings.embedder.__class__.__name__ else 384
+    expected_dim = 384
     assert embeddings.dimension == expected_dim, f"Expected dimension {expected_dim}, got {embeddings.dimension}"
     
     # Test text embedding

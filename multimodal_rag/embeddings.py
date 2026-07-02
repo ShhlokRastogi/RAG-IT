@@ -1,7 +1,6 @@
 import torch
 from transformers import AutoTokenizer, AutoModel
-from openai import OpenAI
-from multimodal_rag.config import get_openai_api_key, OPENAI_EMBED_MODEL, LOCAL_EMBED_MODEL
+from multimodal_rag.config import LOCAL_EMBED_MODEL
 
 class LocalEmbedder:
     """Fallback local embedding generator using PyTorch & Transformers."""
@@ -33,66 +32,16 @@ class LocalEmbedder:
         
         return embeddings.cpu().numpy().tolist()
 
-class OpenAIEmbedder:
-    """Remote embedding generator using OpenAI's API."""
-    def __init__(self, api_key: str, model_name=OPENAI_EMBED_MODEL):
-        print(f"[Embedding] Initializing OpenAI embeddings with model: {model_name}...")
-        self.client = OpenAI(api_key=api_key)
-        self.model_name = model_name
-        self.dimension = 1536
-
-    def embed(self, texts: list[str]) -> list[list[float]]:
-        if not texts:
-            return []
-        
-        # Clean inputs to avoid empty strings/None causing API failures
-        cleaned_texts = [t.replace("\n", " ").strip() for t in texts]
-        cleaned_texts = [t if t else " " for t in cleaned_texts]
-        
-        # Call OpenAI Embeddings API (batch size is handled by API automatically)
-        response = self.client.embeddings.create(
-            input=cleaned_texts,
-            model=self.model_name
-        )
-        # Record tokens
-        if hasattr(response, 'usage') and response.usage:
-            from multimodal_rag.config import TokenTracker
-            TokenTracker.add_embedding_tokens(response.usage.prompt_tokens)
-            
-        # Sort by index to maintain original order
-        sorted_data = sorted(response.data, key=lambda x: x.index)
-        return [item.embedding for item in sorted_data]
-
 class EmbeddingPipeline:
-    """Unified Embedding Manager that dynamically switches between OpenAI and Local fallback."""
+    """Unified Embedding Manager using local Hugging Face Sentence Transformers."""
     def __init__(self):
-        self.api_key = get_openai_api_key()
-        self.embedder = None
-        self.dimension = None
-        self.reset()
-
-    def reset(self):
-        """Recheck API key and reinitialize the embedder."""
-        from multimodal_rag.config import get_use_local_embeddings
-        self.api_key = get_openai_api_key()
-        
-        if get_use_local_embeddings():
-            self._init_local()
-        elif self.api_key:
-            try:
-                self.embedder = OpenAIEmbedder(api_key=self.api_key)
-                self.dimension = self.embedder.dimension
-                self.is_local = False
-            except Exception as e:
-                print(f"[Embedding] Failed to initialize OpenAI Embeddings: {e}. Falling back to local.")
-                self._init_local()
-        else:
-            self._init_local()
-
-    def _init_local(self):
         self.embedder = LocalEmbedder()
         self.dimension = self.embedder.dimension
         self.is_local = True
+
+    def reset(self):
+        """No-op reset for local offline embedding pipeline."""
+        pass
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
         return self.embedder.embed(texts)

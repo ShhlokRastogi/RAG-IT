@@ -22,7 +22,7 @@
 * **Global Query Boosting:** Uses the LLM to identify requests for *all* figures or *all* tables, and overrides localized search thresholds to fetch all matching assets.
 * **Automatic Image Launcher:** Automatically parses image citation coordinates from answers and launches the cropped image file in the default Windows photo viewer.
 * **Code Grounding Disclaimer (Rule 7):** Requires the LLM to check if requested programming scripts exist in the document context, outputting a clear disclaimer before generating a hypothetical code block.
-* **Collection Isolation:** Automatically separates ChromaDB vector collections by appending the dimension size (e.g. `collection_384` vs. `collection_1536`), preventing vector dimension crashes when switching embedding pipelines.
+
 * **Evaluation Scorecard:** Features an automated groundedness benchmark suite with an execution scorecard reporting factual accuracy, recall, and response latency.
 
 ---
@@ -75,14 +75,12 @@ rag-it/
 │   ├── cache/                    # Keyword index dumps & media crops
 │   └── .gitkeep                  # Preserves folder in Git
 │
-├── docs/                         # System documentation
-│   ├── architecture.md           # Architecture data flow diagrams
-│   └── usage.md                  # Settings and command usage guides
-│
 ├── examples/                     # Examples folder
 │   ├── sample_queries.txt        # Sample search queries list
 │   └── sample_documents/         # Sample PDF & CSV files
 │
+├── architecture.md               # Architecture data flow diagrams
+├── usage.md                      # Settings and command usage guides
 ├── requirements.txt              # Project third-party dependencies
 ├── README.md                     # Project README manual
 ├── LICENSE                       # MIT License
@@ -177,11 +175,8 @@ Test these sample queries on the default `biosensors.pdf` document:
 
 ## 🔧 Troubleshooting
 
-* **ChromaDB Vector Dimension Errors:**
-  * If you switch between local embeddings (384 dimensions) and OpenAI embeddings (1536 dimensions), you may encounter dimension errors on old indexes. The system automatically isolates these using named collections (`collection_384` and `collection_1536`), but if issues persist, run:
-    ```bash
-    rag_it reset
-    ```
+* **ChromaDB Database Cleanup:**
+  * If your search database becomes corrupted or behaves unexpectedly, you can reset it completely by running `rag_it reset` or selecting option `[7]` in the Control Panel.
 * **Script Execution Permissions on Windows:**
   * If you get a Windows script execution warning, open PowerShell as Administrator and run:
     ```powershell
