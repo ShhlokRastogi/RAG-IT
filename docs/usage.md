@@ -5,6 +5,15 @@ This guide details how to setup, configure, and operate the **RAG It** search en
 ## ⚙️ Configuration
 
 Set your OpenAI API Key (used for answer synthesis and automated evaluation):
+
+### 1. Secure Prompt (Recommended)
+Run the config command without any flags to enter your API key securely without it appearing in your shell history:
+```bash
+rag_it config
+```
+
+### 2. Direct Input
+Alternatively, pass your key directly as a flag:
 ```bash
 rag_it config --key "YOUR-OPENAI-KEY"
 ```
@@ -39,6 +48,7 @@ rag_it start
 
 ### Active Console Commands:
 * `/start` - opens the document selector/ingestion wizard to change the active search scope.
+* `/key` - dynamically prompts for and updates the OpenAI API Key in the active session.
 * `/stats` - views session performance metrics (turn count, average latency, total prompt and completion tokens used).
 * `/evaluate` - triggers the automated QA benchmark suite.
 * `/clear` - clears the conversational context memory history.

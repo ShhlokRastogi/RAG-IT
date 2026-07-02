@@ -109,9 +109,9 @@ rag-it/
 3. **Configure OpenAI API Key:**
    Configure your OpenAI key (used only for text generation synthesis and evaluation):
    ```bash
-   rag_it config --key "YOUR-OPENAI-API-KEY"
+   rag_it config
    ```
-   *Alternatively, copy `.env.example` to `.env` and enter your key there.*
+   *(Securely prompts for the key. Alternatively, run `rag_it config --key "YOUR-KEY"` or copy `.env.example` to `.env`)*
 
 ---
 
@@ -135,15 +135,16 @@ Launch the interactive console chat window:
 rag_it start
 ```
 Inside the active chat loop, you can use these slash commands:
-* `/start` - switch document scope or ingest new files on the fly.
-* `/stats` - view current chat session token counts and average latency metrics.
+* `/start`    - switch document scope or ingest new files on the fly.
+* `/key`      - dynamically prompt and update the OpenAI API Key.
+* `/stats`    - view current chat session token counts and average latency metrics.
 * `/evaluate` - run the automated QA benchmark scorecard directly.
-* `/clear` - clear active conversational memory history.
-* `/decomp` - toggle semantic query decomposition.
-* `/open` - toggle automatic opening of cited visual crops.
-* `/verbose` - toggle detailed search execution logs.
-* `/help` - view available commands.
-* `/exit` - close the chat loop.
+* `/clear`    - clear active conversational memory history.
+* `/decomp`   - toggle semantic query decomposition.
+* `/open`     - toggle automatic opening of cited visual crops.
+* `/verbose`  - toggle detailed search execution logs.
+* `/help`     - view available commands.
+* `/exit`     - close the chat loop.
 
 ### 3. Run Single Query
 Query the database directly from the terminal without entering the chat loop:
@@ -192,10 +193,9 @@ Test these sample queries on the default `biosensors.pdf` document:
 
 ## 🔮 Future Improvements
 
-1. **Move Hardcoded Workspace Path:** Replace the hardcoded `WORKSPACE_DIR` in `config.py` with a dynamic relative resolver using `Path(__file__)` to make the repository portable.
-2. **Secure Serializations:** Swap python's default `pickle` serialization in the BM25 indexer for a secure layout format like JSON or SQLite to eliminate security vulnerabilities.
-3. **Local OCR Fallback:** Integrate a local OCR package (like `pytesseract`) to allow local diagram descriptions when running completely offline.
-4. **Implement REST API Endpoint:** Build out the FastAPI web server wrapper using the unused dependencies listed in `requirements.txt`.
+1. **Secure Serializations:** Swap python's default `pickle` serialization in the BM25 indexer for a secure layout format like JSON or SQLite to eliminate security vulnerabilities.
+2. **Local OCR Fallback:** Integrate a local OCR package (like `pytesseract`) to allow local diagram descriptions when running completely offline.
+3. **Implement REST API Endpoint:** Build out the FastAPI web server wrapper using the unused dependencies listed in `requirements.txt`.
 
 ---
 
