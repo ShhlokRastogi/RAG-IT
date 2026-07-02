@@ -235,7 +235,7 @@ def main():
 
     # config command
     config_p = subparsers.add_parser("config", help="Configure OpenAI API Key")
-    config_p.add_argument("--key", required=True, help="OpenAI API Key string")
+    config_p.add_argument("--key", required=False, help="OpenAI API Key string (optional, will prompt securely if omitted)")
 
     # ingest command
     ingest_p = subparsers.add_parser("ingest", help="Ingest a document file (PDF, Word, Excel, TXT, MD)")
@@ -280,7 +280,14 @@ def main():
     if args.command == "config":
         print_header("Configuring API Key")
         try:
-            save_openai_api_key(args.key)
+            key = args.key
+            if not key:
+                import getpass
+                key = getpass.getpass("Enter OpenAI API Key: ").strip()
+            if not key:
+                print(f"{C_RED}[Error] API Key cannot be empty.{C_RESET}")
+                return
+            save_openai_api_key(key)
             print(f"{C_GREEN}[Success] API Key saved successfully to settings file.{C_RESET}")
         except Exception as e:
             print(f"{C_RED}[Error] Failed to save key: {e}{C_RESET}")
@@ -766,6 +773,26 @@ def main():
                 history = []
                 print(f"{C_CYAN}[System] Session memory cleared.{C_RESET}")
                 continue
+            elif user_input.lower().startswith("/key"):
+                parts = user_input.split(maxsplit=1)
+                if len(parts) > 1:
+                    new_key = parts[1].strip()
+                else:
+                    import getpass
+                    new_key = getpass.getpass("Enter new OpenAI API Key: ").strip()
+                
+                if new_key:
+                    try:
+                        save_openai_api_key(new_key)
+                        em.reset()
+                        vs = VectorStoreManager(em.dimension)
+                        bm = BM25IndexManager()
+                        print(f"{C_GREEN}[Success] API Key saved and updated for this session.{C_RESET}")
+                    except Exception as e:
+                        print(f"{C_RED}[Error] Failed to save key: {e}{C_RESET}")
+                else:
+                    print(f"{C_RED}[Error] API Key cannot be empty.{C_RESET}")
+                continue
             elif user_input.lower() == "/help":
                 print(f"{C_CYAN}Available Commands:{C_RESET}")
                 print("  /exit, /quit - Close loop")
@@ -776,6 +803,7 @@ def main():
                 print("  /stats       - View current session scorecard metrics")
                 print("  /evaluate    - Run the automated QA groundedness evaluation benchmark suite")
                 print("  /clear       - Clear active memory history")
+                print("  /key         - Update OpenAI API Key dynamically")
                 continue
             elif user_input.startswith("/"):
                 print(f"{C_RED}Unknown command: {user_input}. Type /help for options.{C_RESET}")
