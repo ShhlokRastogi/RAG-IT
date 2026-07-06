@@ -48,50 +48,6 @@ The system utilizes a dual-model hybrid architecture that separates local repres
 
 ---
 
-## 📁 Project Structure
-
-```text
-rag-it/
-│
-├── multimodal_rag/               # Core Python Package
-│   ├── __init__.py               # Package initialization
-│   ├── config.py                 # Settings, folder directories, and token trackers
-│   ├── document_processor.py     # Parser for PDF, Word, Excel, CSV, TXT, and MD files
-│   ├── embeddings.py             # Free local HuggingFace & OpenAI API embedders
-│   ├── vector_store.py           # ChromaDB Vector Store indexing and query managers
-│   ├── keyword_index.py          # BM25 keyword index matching manager
-│   ├── retriever.py              # Hybrid retriever using RRF rank-fusing
-│   └── generator.py              # Query intent classifier, rewriting, and synthesizers
-│
-├── scripts/                      # Executable scripts folder
-│   ├── cli.py                    # Primary Command-line Interface
-│   ├── run.py                    # Executable CLI wrapper
-│   ├── verify_rag.py             # Automated pipeline integration verification tests
-│   └── evaluate_rag.py           # Evaluation QA benchmark suite (Groundedness Scorecard)
-│
-├── data/                         # User data (ignored by Git)
-│   ├── documents/                # Cached documents folder
-│   ├── vector_db/                # Chroma database files
-│   ├── cache/                    # Keyword index dumps & media crops
-│   └── .gitkeep                  # Preserves folder in Git
-│
-├── examples/                     # Examples folder
-│   ├── sample_queries.txt        # Sample search queries list
-│   └── sample_documents/         # Sample PDF & CSV files
-│
-├── architecture.md               # Architecture data flow diagrams
-├── usage.md                      # Settings and command usage guides
-├── requirements.txt              # Project third-party dependencies
-├── README.md                     # Project README manual
-├── LICENSE                       # MIT License
-├── .gitignore                    # Excludes caches and databases from Git
-├── .env.example                  # Environment keys template
-├── rag_it.bat                    # Windows shortcut batch file to run CLI
-└── launch_chat.bat               # Windows shortcut batch file to start interactive chat
-```
-
----
-
 ## 🛠️ Setup & Installation
 
 1. **Install System Dependencies:**
